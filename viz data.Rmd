@@ -1,0 +1,393 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(tigerstats)
+```
+
+After we load the necessary packages, we will import the data. 
+
+```{r}
+visualization_data <- read_csv("C:/Users/sydne/Downloads/visualization_data.csv")
+viz<-visualization_data
+```
+
+Just to make the data more manageable I will do the initial analysis on just NC
+
+```{r}
+table(viz$VNUM_LAN)
+
+length(unique(viz$ST_CASE))
+
+viz<- viz %>%
+  select(MONTH, DAY_WEEK, HOUR, ROUTE, LGT_COND, WEATHER, VTRAFWAY, VNUM_LAN, VSPD_LIM, VALIGN, VSURCOND, LATITUDE, LONGITUD, ST_CASE, FATALS, DRUNK_DR,SPEEDREL, STATE, FATALS, VPROFILE)
+
+viz<-viz[!duplicated(viz$ST_CASE),]
+sum(is.na(viz$LATITUDE))
+sum(is.na(viz$LONGITUD))
+
+viz<-viz[-which(is.na(viz$LATITUDE)),]
+
+sum(is.na(viz$LATITUDE))
+sum(is.na(viz$LONGITUD))
+
+write.csv(viz, "C:\\Users\\sydne\\Documents\\Visualization\\viz.csv")
+```
+
+
+Next, I rounded the lat long to 1 decimal point which gives us about 11 km area blocks
+
+
+```{r}
+viz$LATITUDE <- round(as.numeric(viz$LATITUDE), 1)
+viz$LONGITUD <- round(as.numeric(viz$LONGITUD), 1)
+
+viz$LATLONG <- paste(viz$LATITUDE , "," ,viz$LONGITUD)
+
+head(viz$LATLONG)
+
+sum(is.na(viz$LATLONG))
+```
+
+
+Then to roll - up the data, I aggregated by year and lat-long bocks and measured the sum of deaths in the zipcode for each year.
+
+```{r}
+
+viz$SPEEDREL = substr(viz$SPEEDREL,start = 1, stop = 3)
+viz<-viz %>%
+  mutate(SPEEDREL_num = ifelse(SPEEDREL == "Yes", 1, 0),
+          DRUNK_DR = ifelse(DRUNK_DR == 0, 0, 1))
+
+head(viz$SPEEDREL)
+head(viz$SPEEDREL_num)
+
+test_drunk = aggregate(viz$DRUNK_DR, by=list(LATLONG = viz$LATLONG), FUN = mean)
+test_speed = aggregate(viz$SPEEDREL_num, by=list(LATLONG = viz$LATLONG), FUN = mean)
+
+test=aggregate(viz$FATALS, by=list(LATLONG = viz$LATLONG), FUN= sum)
+
+test = separate(test, LATLONG, into= c("Latitude", "Longitude"), remove = FALSE, sep = ",")
+
+table(test$risk)
+quantile(test$x, probs = c(0, .33, .5 ,.66, .75, .8, .9, 1), na.rm = TRUE)
+sd(test$x)
+
+pnormGC(4,region="below",mean=mean(test$x),
+        sd=sd(test$x),graph=TRUE)
+
+write.csv(test, "C:\\Users\\sydne\\Documents\\Visualization\\test.csv")
+
+head(test_drunk)
+head(test_speed)
+
+quantile(test_drunk$x, probs = c(0, .33, .5 ,.66, .75, 1), na.rm = TRUE)
+quantile(test_speed$x, probs = c(0, .33, .5 ,.66, .75, 1), na.rm = TRUE)
+
+library(plyr)
+test_drunk<-rename(test_drunk, c("x"="drunk"))
+test_speed<-rename(test_speed, c("x"="speed"))
+
+test_both<-test_drunk %>%
+  join(test_speed, by = c("LATLONG"))
+
+test_both<- test_both%>%
+  mutate(enforce = ifelse((drunk >.5) & (speed >.5), "Both", ifelse((speed > .5) & (drunk <=.5), "Speeding", ifelse((drunk >.5) & (speed <=.5), "Drunk Driving", ifelse((speed <.5) & (drunk < .5), "Neither", NA)))))
+
+table(test_both$enforce)
+```
+
+I then viewed the distribution with quantiles and labeled the risk of the latlong blocks as follows :
+1 = low risk : less than 2 deaths due to car crashes per year
+2 = medium risk : between 2 and 4 deaths due to car crashes each year
+3 = high risk : more than 4 deaths due to car crashes each year
+
+```{r}
+sum(is.na(test$x))
+test <- test %>%
+  mutate(low = ifelse(x < 2 , 1, 0 ),
+         med = ifelse(x >= 2 & x < 4,2,0 ),
+         hi = ifelse(x >=  4, 3, 0 ))
+
+
+
+table(test$low)
+table(test$med)
+table(test$hi)
+
+test<-test %>%
+  mutate(risk = low + med + hi,
+         risk = ifelse(is.na(risk), 0, risk))
+table(test$risk)
+test<-test %>%
+  join(test_both, by =c("LATLONG"))
+
+write.csv(test,"C:\\Users\\sydne\\Documents\\Visualization\\agg.csv"  )
+
+sum(test$x[which(test$risk == 3)])
+sum(test$x[which(test$risk == 2)])
+sum(test$x[which(test$risk == 1)])
+
+table(test$risk)
+
+hist(test_drunk$drunk)
+```
+
+Then I joined the `test` dataset with the regular data to classify the location of each observation as high low or medium risk 
+
+```{r}
+viz<- viz %>%
+  left_join(test, by = c("LATLONG"))
+
+viz<- viz %>%
+            mutate(a = ifelse(HOUR == "0:00am-0:59am", 0, 0),
+            b = ifelse(HOUR == "1:00am-1:59am", 1, 0),
+            c = ifelse(HOUR == "2:00am-2:59am", 2, 0),
+            d = ifelse(HOUR == "3:00am-3:59am", 3, 0),
+            e = ifelse(HOUR == "4:00am-4:59am", 4, 0),
+            f = ifelse(HOUR == "5:00am-5:59am", 5, 0),
+            g = ifelse(HOUR == "6:00am-6:59am", 6, 0),
+            h = ifelse(HOUR == "7:00am-7:59am", 7, 0),
+            i = ifelse(HOUR == "8:00am-8:59am", 8, 0),
+            j = ifelse(HOUR == "9:00am-9:59am", 9, 0),
+            k = ifelse(HOUR == "10:00am-10:59am", 10, 0),
+            l = ifelse(HOUR == "11:00am-11:59am", 11, 0),
+            m = ifelse(HOUR == "12:00pm-12:59pm", 12, 0),
+            n = ifelse(HOUR == "1:00pm-1:59pm", 13, 0),
+            o = ifelse(HOUR == "2:00pm-2:59pm", 14, 0),
+            p = ifelse(HOUR == "3:00pm-3:59pm", 15, 0),
+            q = ifelse(HOUR == "4:00pm-4:59pm", 16, 0),
+            r = ifelse(HOUR == "5:00pm-5:59pm", 17, 0),
+            s = ifelse(HOUR == "6:00pm-6:59pm", 18, 0),
+            t = ifelse(HOUR == "7:00pm-7:59pm", 19, 0),
+            u = ifelse(HOUR == "8:00pm-8:59pm", 20, 0),
+            v = ifelse(HOUR == "9:00pm-9:59pm", 21, 0),
+            w = ifelse(HOUR == "10:00pm-11:59pm", 22, 0),
+            x = ifelse(HOUR == "11:00pm-11:59pm", 23, 0))
+
+viz <- viz %>%
+  mutate(hourNum = a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p+q+r+s+t+u+v+w+x,
+         mphNum = as.numeric(gsub(" MPH", "", VSPD_LIM)))
+
+head(viz$VSPD_LIM[which(is.na(viz$mphNum))])
+
+
+viz<-viz %>%
+  mutate(one = ifelse(VNUM_LAN =="One lane", 1, 0),
+         two = ifelse(VNUM_LAN =="Two lanes", 2, 0),
+         three = ifelse(VNUM_LAN =="Three lanes", 3, 0),
+         four = ifelse(VNUM_LAN =="Four lanes", 4, 0),
+         five = ifelse(VNUM_LAN =="Five lanes", 5, 0),
+         six = ifelse(VNUM_LAN =="Six lanes", 6, 0),
+         seven = ifelse(VNUM_LAN =="Seven or more lanes", 7, 0),
+         zero = ifelse(VNUM_LAN == "Not reported" | VNUM_LAN == "Other" | VNUM_LAN == "Non-Trafficway or Driveway Access ", NA, 0))
+
+viz<-viz %>%
+  mutate(lanes = one + two + three + four + five + six + seven + zero)
+
+head(viz$lanes)
+
+
+viz<-viz %>%
+  select(risk , LATITUDE, LONGITUD, MONTH , DAY_WEEK ,  ROUTE , LGT_COND , WEATHER , VTRAFWAY , VNUM_LAN , VSPD_LIM , VALIGN , VSURCOND , hourNum, STATE, speed, drunk, lanes, VPROFILE,enforce,FATALS )
+
+write.csv(viz, "C:\\Users\\sydne\\Documents\\Visualization\\vizRisk.csv")
+
+hist(test_drunk$drunk)
+
+
+sum(viz$FATALS[which((viz$SPEEDREL_num ==1 | viz$DRUNK_DR ==1))]) ##BLUFF??
+
+
+ten<-test %>% 
+  mutate(decrease = drunk*.1,
+         new_drunk = drunk - decrease,
+         new_speed = speed - decrease,
+         new_fatals = x*(new_drunk/drunk),
+         new_low = ifelse(new_fatals < 2 , 1, 0 ),
+         new_med = ifelse(new_fatals >= 2 & new_fatals < 4,2,0 ),
+         new_hi = ifelse(new_fatals >=  4, 3, 0 ),
+         new_risk = new_low + new_med + new_hi)
+
+fifty<-test %>% 
+  mutate(new_drunk = drunk*(1-1),
+         new_speed = speed*(1-1),
+         new_fatals = x*(new_drunk/drunk),
+         new_low = ifelse(new_fatals < 2 , 1, 0 ),
+         new_med = ifelse(new_fatals >= 2 & new_fatals < 4,2,0 ),
+         new_hi = ifelse(new_fatals >=  4, 3, 0 ),
+         new_risk = new_low + new_med + new_hi)
+
+table(twentyfive$risk, twentyfive$new_risk)
+
+table(ten$risk, ten$new_risk)
+
+datalist<-list()
+
+for(i in seq(.01,1, by=.01)){
+ df<-test %>% 
+  mutate(decrease = paste(i*100, "%", sep=""),
+         new_drunk = drunk*(1-i),
+         new_speed = speed*(1-i),
+         new_fatals = x*(new_drunk/drunk),
+         new_low = ifelse(new_fatals < 2 , 1, 0 ),
+         new_med = ifelse(new_fatals >= 2 & new_fatals < 4,2,0 ),
+         new_hi = ifelse(new_fatals >=  4, 3, 0 ),
+         new_risk = new_low + new_med + new_hi)
+ datalist[[i*100]]<-df
+ 
+}
+
+big_data = do.call(rbind, datalist)
+big_data$new_risk[which(is.na(big_data$new_risk))]<-big_data$risk[which(is.na(big_data$new_risk))]
+sum(is.na(big_data$new_risk))
+
+write.csv(big_data,"C:\\Users\\sydne\\Documents\\Visualization\\agg_new.csv")
+fifty$new_fatals[which(is.na(fifty$new_fatals))]<-fifty$x[which(is.na(fifty$new_fatals))]
+fifty$new_risk[which(is.na(fifty$new_risk))]<-fifty$risk[which(is.na(fifty$new_risk))]
+sum(test$x)-sum(fifty$new_fatals)
+
+table(fifty$new_risk)
+```
+
+decrease drunk driving to 0% of fatalities. for the percent change in drunk driving you change the number of deaths that occured in that area.
+
+because if an area has 4 deaths and 50% of them occurred due to drunk driving, decreasing by 1% would decrease deaths by 49/50 so 4*49/50. then recalculate the risk of that area for the decrease that happened. column for decrease and column for level of risk. 
+
+so do this in the test data...
+
+
+```{r}
+10778/28755
+```
+
+
+Now we will fit a random forest. I took into account ONLY the variables that describe the LOCATION of the wreck or the conditions of that location - nothing about the driver becase we want to identify high risk areas not types of drivers.
+
+First we split into test and train. 
+
+```{r}
+library(data.table)
+# Create index to split based on labels
+
+viz<-viz %>%
+  select(risk , MONTH , DAY_WEEK ,  ROUTE , LGT_COND , WEATHER , VTRAFWAY , VSPD_LIM , VALIGN , VSURCOND , hourNum, STATE, speed, drunk, VPROFILE,lanes )
+
+viz<-data.frame(lapply(viz, as.factor))
+viz$speed<-as.numeric(viz$speed)
+viz$drunk<-as.numeric(viz$drunk)
+set.seed(11111)
+train <- sample(nrow(viz), 0.7*nrow(viz), replace = FALSE)
+TrainSet <- viz[train,]
+ValidSet <- viz[-train,]
+
+table(viz$MONTH)
+
+table(TrainSet$risk)
+
+sum(is.na(TrainSet$mphNum))
+```
+
+
+Then we fit a random forest! (uncomment that `install.packages()` below)
+
+
+#install.packages("randomForest")
+
+library(randomForest)
+model1 <- randomForest(risk ~ MONTH + DAY_WEEK +  ROUTE + LGT_COND + WEATHER + VTRAFWAY + VNUM_LAN + VSPD_LIM + VALIGN +VSURCOND + hourNum + LATITUDE, data = TrainSet, importance = TRUE)
+model1
+summary(model1)
+
+
+
+Then we can fine tune the model by telling it to try more vairable at each node - how about 6? 
+
+```{r}
+model2 <- randomForest(risk ~ MONTH + DAY_WEEK + ROUTE + LGT_COND + WEATHER + VTRAFWAY + VNUM_LAN + VSPD_LIM + VALIGN +VSURCOND , data = TrainSet,ntree = 500, mtry = 6, importance = TRUE)
+model2
+```
+
+12.9% error rate! we can still fine tune this but thats pretty good
+
+now we will look at predicions
+
+```{r}
+predTrain <- predict(model2, TrainSet, type = "class")
+# Checking classification accuracy
+table(predTrain, TrainSet$risk)
+```
+
+now we will look at predictions on validation set!
+
+```{r}
+predValid <- predict(model2, ValidSet, type = "class")
+# Checking classification accuracy
+mean(predValid == ValidSet$risk)                    
+table(predValid,ValidSet$risk)
+```
+
+
+I'm not entirely sure what the next plot/output tells us but i think the lower the number of `MeanDecreaseAccuracy...` the better? 
+
+```{r}
+importance(model2)        
+varImpPlot(model2) 
+```
+
+```{r}
+a=c()
+i=5
+for (i in 3:8) {
+  print(i)
+  model3 <- randomForest(risk ~ MONTH + DAY_WEEK + ROUTE + LGT_COND + WEATHER + VTRAFWAY + VNUM_LAN + VSPD_LIM + VALIGN +VSURCOND + STATE, data = TrainSet, ntree = 50, mtry = i, importance = TRUE)
+  predValid <- predict(model3, ValidSet, type = "class")
+  a[i-2] = mean(predValid == ValidSet$risk)
+}
+ 
+a
+ 
+plot(3:8,a)
+```
+
+
+
+```{r}
+model3 <- randomForest(risk ~ MONTH + DAY_WEEK + ROUTE + LGT_COND + WEATHER + VTRAFWAY + lanes + VSPD_LIM + VALIGN +VSURCOND + hourNum + VPROFILE, data = TrainSet, ntree = 50, mtry = 4, importance = TRUE)
+predValid <- predict(model3, ValidSet, type = "class")
+model3
+importance(model3)        
+varImpPlot(model3)
+```
+
+
+```{r}
+table(viz$risk)
+```
+
+```{r}
+viz<- viz %>%
+  mutate(enforce = ifelse((drunk >50) & (speed >50), "Both", ifelse((speed > 50) & (drunk <=50), "Speeding", ifelse((drunk >50) & (speed <=50), "Drunk Driving", ifelse((speed <50) & (drunk < 50), "Neither", NA)))))
+hist(viz$drunk)
+table(viz$enforce)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
