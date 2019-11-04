@@ -1,0 +1,62 @@
+---
+title: "TimeSeries-HW1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readr)
+raleigh <- read_csv("MSA Data/PM_2_5_Raleigh2.csv")
+
+```
+
+
+```{r}
+raleigh$`Daily Mean PM2.5 Concentration`[4]
+```
+
+
+```{r}
+sum(is.na(raleigh$`Daily Mean PM2.5 Concentration`))
+```
+
+```{r}
+library(lubridate)
+raleigh$Date<-as.Date(raleigh$Date, "%m/%d/%Y")
+
+str(raleigh$Date)
+```
+
+```{r}
+library(ggplot2)
+ggplot(raleigh,aes(x=Date, y=`Daily Mean PM2.5 Concentration`))+
+  geom_line()
+
+raleigh$month<-months(raleigh$Date)
+raleigh$year<-format(raleigh$Date, format="%Y")
+
+
+monthav<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year, raleigh, mean)
+
+sum(is.na(monthav$`Daily Mean PM2.5 Concentration`))
+
+```
+
+
+```{r}
+raleigh$Date[1473]- raleigh$Date[1]
+
+1825-1473
+
+```
+
+```{r}
+raleigh.ts<-ts(monthav$`Daily Mean PM2.5 Concentration`, frequency = 12)
+decomp_stl <- stl(raleigh.ts, s.window = 7)
+plot(decomp_stl)
+``
+
