@@ -1,0 +1,113 @@
+---
+title: "SurvivalHW1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First, we will install/load packages and read in the data.
+
+```{r}
+install.packages("survival")
+install.packages("survminer")
+library(dplyr)
+library(survival)
+library(survminer)
+library(haven)
+hurricane = read_sas("C:\\Users\\sydne\\Documents\\Survival Analysis\\Homework1_SA\\hurricane.sas7bdat")
+```
+
+next we will find the percentage of pumps that survived the hurricane overall
+
+
+```{r}
+mean(hurricane$survive)
+```
+
+then we will group by the reason of failure to find the percent that survived, the percentage of observations and the average failure time by reason of failure.
+
+
+```{r}
+
+hurricane %>%
+  group_by(reason) %>%
+  summarise(percent_surv = mean(survive), percent = n()/770, avg_failtime = mean(hour))
+
+
+```
+
+
+ANOVA and equal vairances test
+
+```{r}
+library(lawstat)
+levene.test(hurricane$hour, hurricane$reason)
+
+pre_anova<-lm(hour~factor(reason), data = hurricane)
+summary(pre_anova)
+anova(pre_anova)
+
+```
+
+
+Survival probability plot (not stratified)
+
+
+```{r}
+recid_surv <- Surv(time = hurricane$hour, event = hurricane$survive == 0)
+
+recid_km <- survfit(recid_surv ~ 1, data = hurricane)
+summary(recid_km)
+plot(recid_km, main = "Survival Function", xlab = "hour", ylab = "Survival Probability")
+
+ggsurvplot(recid_km, data = hurricane, conf.int = TRUE, palette = "purple",
+           xlab = "hour", ylab = "Survival Probability", legend = "none",
+           break.y.by = 0.1)
+```
+
+stratified survival probability plot
+
+```{r}
+
+
+survdiff(recid_surv ~ reason, rho = 0, data = hurricane)
+
+recid_strat <- survfit(recid_surv ~ reason, data = hurricane)
+ggsurvplot(recid_strat, data = hurricane, pval = TRUE)
+
+```
+
+
+hazard function plot and calculations
+
+```{r}
+recid_km$hp <- recid_km$n.event/recid_km$n.risk
+recid_haz <- merge(data.frame(time = seq(1,48,1)), data.frame(time = recid_km$time, hp = recid_km$hp), by = "time", all = TRUE)
+recid_haz[is.na(recid_haz) == TRUE] <- 0
+
+plot(y = recid_haz$hp, x = recid_haz$time, main = "Hazard Probability Function", xlab = "Tenure", ylab = "Hazard Probability",
+     type = 'l')
+
+ggsurvplot(recid_km, data = hurricane, fun = "cumhaz", conf.int = TRUE, palette = "purple",
+           xlab = "Hour", ylab = "Cumulative Hazard", legend = "none")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
