@@ -1,0 +1,257 @@
+---
+title: "TimeSeriesHW2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(haven)
+library(forecast)
+library(fma)
+library(tseries)
+library(expsmooth)
+library(lmtest)
+library(zoo)
+library(ggplot2)
+```
+
+
+```{r}
+library(readr)
+raleigh<- read_csv("C:/Users/sydne/Downloads/PM_2_5_Raleigh2.csv")
+```
+
+```{r}
+#check structure of data
+str(raleigh)
+```
+
+```{r}
+#change date to date format
+library(lubridate)
+raleigh$Date<-as.Date(raleigh$Date,"%m/%d/%Y" )
+#create month and year columns
+
+#creating the month and year function like this ensures values dont get jumbled when you aggregate and create a ts object
+raleigh$month<-format(raleigh$Date, format="%m")
+raleigh$year<-format(raleigh$Date, format="%Y")
+
+#split data into test and train
+max(raleigh$Date)
+
+str(raleigh$Date)
+
+
+last6<-which(raleigh$Date > max(raleigh$Date) %m-% months(6))
+#creates index for most recent 6 months (most recent date - 6 months)
+test_raleigh<-raleigh[last6,]
+train_raleigh<-raleigh[-last6,]
+
+#create data set of monthly averages for test and train
+monthav<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year,raleigh, mean)
+
+#aggregate the data to get the monthly averages for the test set
+monthav_test<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year, test_raleigh, mean)
+#aggregate the data to get the monthly averages for the train set
+monthav_train<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year, train_raleigh, mean)
+```
+
+
+```{r}
+monthly<-ts(monthav$`Daily Mean PM2.5 Concentration`, start = 2014, frequency=12)
+ monthly_train <- ts(monthav_train$`Daily Mean PM2.5 Concentration`, start = 2014, frequency =12)
+ monthly_test <- ts(monthav_test$`Daily Mean PM2.5 Concentration`, start = c(2018,7), frequency =12)
+#ts turns data into time series objects. start makes the graph look good. Frequency = is designating 
+#the seasonal component. ask question after class about this. 
+
+# Time Series Decomposition ...STL#
+decomp_stl <- stl(monthly_train, s.window = 7)
+plot(decomp_stl)
+#stl stands for season and trend loess decomp. must pass it a time series 
+#object. the s.window is the size. it is looking at the rolling average so 
+#that 7 gives it a number to average over. should always be odd
+
+plot(monthly_train, col = "grey", main = "Monthly Average Air Quality - Trend/Cycle", xlab = "", ylab = "Daily Concentration", lwd = 2)
+lines(decomp_stl$time.series[,2], col = "red", lwd = 2)
+
+```
+
+
+```{r}
+#Seasonally Adjusted Overlay Graph
+seas_month=decomp_stl$time.series[,2]+decomp_stl$time.series[,3]
+plot(monthly_train, col = "grey", main = "Monthly Average Air Quality - Seasonally Adjusted", xlab = "", ylab = "Daily Concentration", lwd = 2)
+lines(seas_month, col = "red", lwd = 2)
+
+```
+
+
+```{r}
+#a prettier seasonally adjusted plot
+library(ggplot2)
+p<-autoplot(monthly_train)+
+  geom_line(aes(y=monthly_train), col="gray", size=1.5)+
+  geom_line(aes(y=seas_month), col="red", size=1.5)+
+  theme_bw()+
+  xlab("Year")+
+  ylab("Average Daily Concentration (Pm)")+
+  ggtitle("Monthly Average Air Quality - Seasonally Adjusted")
+
+p
+#pretty trend component graph
+p<-autoplot(monthly_train)+
+  geom_line(aes(y=monthly_train), col="gray", size=1.5)+
+  geom_line(aes(y=decomp_stl$time.series[,2]), col="red", size=1.5)+
+  theme_bw()+
+  xlab("Year")+
+  ylab("Average Daily Concentration (Pm)")+
+  ggtitle("Monthly Average Air Quality - Seasonally Adjusted")
+
+p
+```
+
+```{r}
+#make all 4 type of esm forecasts
+fc <- holt(monthly_train,initial = "optimal", h=6)
+fc2 <- holt(monthly_train, damped=TRUE, h=6)
+fc3 <- hw(monthly_train, seasonal = "additive", h=6)
+fc4 <- hw(monthly_train, seasonal = "multiplicative", h=6)
+
+
+
+plot(fc, main = "Daily concentrations -Simple ESM", xlab = "Date", ylab = "Average Daily Concentrations")
+abline(v = 2014, col = "red", lty = "dashed")
+
+
+plot(fc2, main = "Daily concentrations-Damped ESM", xlab = "Date", ylab = "Average Daily Concentrations")
+abline(v = 2014, col = "red", lty = "dashed")
+
+plot(fc3, main = "Daily concentrations-Additive Seasonality", xlab = "Date", ylab = "Average Daily Concentrations")
+abline(v = 2014, col = "red", lty = "dashed")
+
+plot(fc4, main = "Daily concentrations-Multiplicative Seasonality", xlab = "Date", ylab = "Average Daily Concentrations")
+abline(v = 2014, col = "red", lty = "dashed")
+
+
+```
+
+
+```{r}
+#calculates mae and mape for linear forecast
+test.results=forecast(fc,h=6)
+test.results$mean
+test.results
+monthly_test
+error=monthly_test-test.results$mean
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthly_test))
+MAE
+MAPE
+```
+
+```{r}
+#calculates mae and mape for damped forecast
+test.results=forecast(fc2,h=6)
+test.results$mean
+monthly_test
+error=monthly_test-test.results$mean
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthly_test))
+MAE
+MAPE
+```
+
+```{r}
+#calculates mae and mape for additive forecast
+test.results=forecast(fc3,h=6)
+test.results$mean
+monthly_test
+error=monthly_test-test.results$mean
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthly_test))
+MAE
+MAPE
+```
+
+```{r}
+#calculates mae and mape for multiplicative forecast
+test.results=forecast(fc4,h=6)
+test.results$mean
+monthly_test
+error=monthly_test-test.results$mean
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthly_test))
+MAE
+MAPE
+```
+
+```{r}
+head(monthav)
+```
+
+```{r}
+raleigh$Date
+```
+
+
+```{r}
+#comparison of all the different models with the observed values in the training dataset
+p<-autoplot(monthly_train) +
+  #autolayer(monthly_test, "Observed Values")+
+  autolayer(fc, series="Holt's method", PI=FALSE) +
+  autolayer(fc2, series="Damped Holt's method", PI=FALSE) +
+  autolayer(fc3, series="Additive HW", PI=FALSE)+
+  autolayer(fc4, series="Multiplicative HW", PI=FALSE)+
+  ggtitle("Forecasts from Holt's method") + xlab("Year") +
+  ylab("Daily Average Air Concentration (PMs)") +
+  theme_bw()+
+  guides(colour=guide_legend(title="Forecast"))
+p
+
+#comparison of all the different predictions with the observed values in the test dataset
+
+p<-autoplot(monthly_test) +
+  autolayer(fc, series="Holt's method", PI=FALSE) +
+  autolayer(fc2, series="Damped Holt's method", PI=FALSE) +
+  autolayer(fc3, series="Additive HW", PI=FALSE)+
+  autolayer(fc4, series="Multiplicative HW", PI=FALSE)+
+  ggtitle("Forecasts from Holt's method") + xlab("Year") +
+  ylab("Daily Average Air Concentration (PMs)") +
+  theme_bw()+
+  guides(colour=guide_legend(title="Forecast"))
+p
+
+```
+
+```{r}
+library(readxl)
+library(scales)
+saspreds <- read_excel("C:/Users/sydne/Downloads/master.xlsx")
+
+addseas<-saspreds$AddSeasonal
+
+addseas_test<-saspreds$AddSeasonal[55:60]
+
+autoplot(monthly)+
+  geom_line(aes(y=addseas),col="red")+
+  theme_bw()+
+  xlab("Year")+
+  ylab("Monthly Average of Daily Mean of PM2.5 Concentration")+
+   ggtitle("Additive Seasonal Model (red) Compared to Observed Values (black)")
+  
+autoplot(monthly_test)+
+  geom_line(aes(y=addseas_test), col='red')+
+  theme_bw()+
+  xlab("Month and Year")+
+  ylab("Monthly Average of Daily Mean of PM2.5 Concentration")+
+  ggtitle("Additive Seasonal Model (red) Compared to Observed Values (black)")
+```
+
+
+```
+
