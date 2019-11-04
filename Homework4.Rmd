@@ -1,0 +1,502 @@
+---
+title: "Time Series Homework 4"
+output: html_notebook
+---
+
+```{r, echo=FALSE}
+library(haven)
+library(forecast)
+library(fma)
+library(tseries)
+library(expsmooth)
+library(lmtest)
+library(zoo)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(lubridate)
+```
+
+First, we will load in our data, split it into training and validation, aggregate the data into monthly averages, and create time series objects.
+
+
+```{r}
+
+raleigh<- read_csv("C:/Users/sydne/Downloads/PM_2_5_Raleigh2.csv")
+
+#check structure of data
+str(raleigh)
+
+#change date to date format
+
+raleigh$Date<-as.Date(raleigh$Date,"%m/%d/%Y" )
+#create month and year columns
+
+#creating the month and year function like this ensures values dont get jumbled when you aggregate and create a ts object
+raleigh$month<-format(raleigh$Date, format="%m")
+raleigh$year<-format(raleigh$Date, format="%Y")
+
+#split data into test and train
+max(raleigh$Date)
+
+str(raleigh$Date)
+
+
+last6<-which(raleigh$Date > max(raleigh$Date) %m-% months(6))
+#creates index for most recent 6 months (most recent date - 6 months)
+test_raleigh<-raleigh[last6,]
+train_raleigh<-raleigh[-last6,]
+test_raleigh
+#create data set of monthly averages for test and train
+monthav<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year,raleigh, mean)
+
+#aggregate the data to get the monthly averages for the training and test set
+monthav_train<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year, train_raleigh, mean)
+monthav_train.ts<-ts(monthav_train$`Daily Mean PM2.5 Concentration`, start = 2014, frequency =12)
+
+monthav_test<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year, test_raleigh, mean)
+
+monthav_test.ts<-ts(monthav_test$`Daily Mean PM2.5 Concentration`, start = c(2018,7), frequency =12)
+```
+
+
+Next we will run a decomposition to identify trend and seasonality in the training data
+
+```{r}
+decomp_stl<-stl(monthav_train.ts, s.window = 7)
+plot(decomp_stl)
+```
+
+To begin our analysis, we will check for stationarity. 
+
+```{r}
+adf.test(monthav_train.ts, alternative = "stationary", k = 0)
+
+ADF.Pvalues <- rep(NA, 3)
+for(i in 0:2){
+  ADF.Pvalues[i+1] <- adf.test(monthav_train.ts, alternative = "stationary", k = i)$p.value
+}
+
+ADF.Pvalues
+```
+
+Good! We don't have a random walk; our data is stationary so we can start modeling.
+
+We will now try to model the seasonality using different numbers of fourier terms.
+
+```{r}
+#4 fourier terms
+arima.1<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+summary(arima.1)
+plot.ts(arima.1$residuals)
+Acf(arima.1$residuals)
+arima.1$residuals %>%
+  ggtsdisplay()
+
+```
+
+```{r}
+#5 fourier terms
+arima.1a<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=5))
+summary(arima.1a)
+plot.ts(arima.1a$residuals)
+Acf(arima.1a$residuals)
+arima.1a$residuals %>%
+  ggtsdisplay()
+
+```
+
+
+```{r}
+#6 fourier terms
+arima.1b<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=6))
+summary(arima.1b)
+plot.ts(arima.1b$residuals)
+Acf(arima.1b$residuals)
+arima.1b$residuals %>%
+  ggtsdisplay()
+```
+
+
+The model with 4 fourier terms has the lowest AIC. We now want to see if we have a seasonal unit root in the data, to indicate whether or not we need to take a seasonal difference. 
+
+```{r}
+ nsdiffs(arima.1$residuals)
+ nsdiffs(arima.1$residuals,test='ch')
+```
+
+We get 0, therefore we do not need to take differences.
+
+We will now run a LJung Box Test on the residuals of the model with 4 fourier terms to see if we have significant autocorrelation. 
+```{r}
+ White.LB <- rep(NA, 10)
+for(i in 1:10){
+  White.LB[i] <- Box.test(arima.1$residuals, lag = i, type = "Ljung", fitdf = 0)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+
+
+We have not achieved white noise, therefore we will now look at the ACF and PACF to see what AR and MA terms need to be modeled. 
+
+```{r}
+arima.1<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+summary(arima.1)
+plot.ts(arima.1$residuals)
+Acf(arima.1$residuals, lag.max = 40)
+arima.1$residuals %>%
+  ggtsdisplay()
+```
+
+The ACF has a spike at 1 and 2 and **almost** a spike at 9. The PACF has a spike at 1. We will now try to model this autocorrelation. We will start with just modleing 2 autoregressive terms. 
+
+
+```{r}
+arima.1 <- Arima(monthav_train.ts,order=c(2,0,0), seasonal=c(0,0,0), xreg=fourier(monthav_train.ts,K=4)) 
+ arima.1 %>%
+ residuals() %>% ggtsdisplay()
+
+```
+
+The spikes at lag 1 and 2 are gone! The spike at 9 is not quite significant, so now we will check for white noise again.
+
+```{r}
+ White.LB <- rep(NA, 10)
+for(i in 1:10){
+  White.LB[i] <- Box.test(arima.1$residuals, lag = i, type = "Ljung", fitdf = 2)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+
+Yay! We have no autocorrelation. There doesn't seem to be significant trend to model, so this will be our first candidate model: An ARIMA(2,0,0)(0,0,0) with 4 fourier terms.
+
+
+Now we will look at a less parsimonious model, trying to take care of the slight spike at 9. 
+```{r}
+arima.2 <- Arima(monthav_train.ts,order=c(9,0,0), seasonal=c(0,0,0), xreg=fourier(monthav_train.ts,K=4)) 
+ arima.2 %>%
+ residuals() %>% ggtsdisplay()
+```
+
+Now there is a spike at 12, so lets fit a seasonal AR term. 
+
+```{r}
+arima.2 <- Arima(monthav_train.ts,order=c(9,0,0), seasonal=c(1,0,0), xreg=fourier(monthav_train.ts,K=4)) 
+ arima.2 %>%
+ residuals() %>% ggtsdisplay()
+```
+
+We have no spikes! Lets check for white noise!
+
+```{r}
+ White.LB <- rep(NA, 10)
+for(i in 10:20){
+  White.LB[i] <- Box.test(arima.2$residuals, lag = i, type = "Ljung", fitdf = 10)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+
+```
+
+
+
+There is little to no autocorrelation. There doesn't seem to be significant trend here either. This will be our second candidate model. 
+
+
+Now, we want to see if modeling a trend will produce a powerful model.
+We will fit a linear and a quadratic trend and see which one explaines more vairance.
+
+```{r}
+arima.3<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+summary(arima.3)
+plot.ts(arima.3$residuals)
+Acf(arima.3$residuals)
+arima.3$residuals %>%
+  ggtsdisplay()
+
+t<-c(1:54)
+quadmod<-lm(arima.3$residuals~t + I(t^2))
+summary(quadmod)
+plot.ts(quadmod$residuals)
+
+linmod<-lm(arima.3$residuals~t)
+summary(linmod)
+plot.ts(linmod$residuals)
+
+```
+
+The adjusted R-squared is higher for the quadratic trend model so we will continue our analysis with that.
+
+Below, in order to incorporate the trend and the seasonality terms and make forecasting easier i have created a `regressors` data frame that includes the fourier terms and the quadratic terms that we wil plug into xreg.
+
+```{r}
+t<-c(1:54)
+regressors=cbind(fourier(monthav_train.ts,K=4), t, t^2)
+arima.3<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=regressors)
+summary(arima.3)
+plot.ts(arima.3$residuals)
+Acf(arima.3$residuals)
+arima.3$residuals %>%
+  ggtsdisplay()
+```
+
+check for white noise
+
+```{r}
+White.LB <- rep(NA, 10)
+for(i in 1:20){
+  White.LB[i] <- Box.test(arima.3$residuals, lag = i, type = "Ljung", fitdf = 0)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+Not quite there. We see there is a spike at 12 and 24 so we can model with 2 seasonal AR terms.
+
+
+```{r}
+arima.3<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(2,0,0),xreg=regressors)
+summary(arima.3)
+plot.ts(arima.3$residuals)
+Pacf(arima.3$residuals, lag.max = 50)
+arima.3$residuals %>%
+  ggtsdisplay()
+```
+
+
+
+check for white noise again.
+
+
+```{r}
+White.LB <- rep(NA, 10)
+for(i in 1:50){
+  White.LB[i] <- Box.test(arima.3$residuals, lag = i, type = "Ljung", fitdf = 2)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+Ew thats ugly. The PACF above looks like there are spikes up to 6, so we will fit 6 ar terms.
+
+```{r}
+arima.3<-Arima(monthav_train.ts,order=c(6,0,0), seasonal= c(2,0,0),xreg=regressors)
+summary(arima.3)
+plot.ts(arima.3$residuals)
+Pacf(arima.3$residuals, lag.max = 50)
+arima.3$residuals %>%
+  ggtsdisplay()
+```
+
+The PACF looks much better. And now we will test for white noise again
+
+```{r}
+White.LB <- rep(NA, 10)
+for(i in 1:50){
+  White.LB[i] <- Box.test(arima.3$residuals, lag = i, type = "Ljung", fitdf = 8)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+This looks pretty good. We will call this our third candidate model. An ARIMA(6,0,0)(2,0,0) with 4 fourier terms and a quadratic trend.
+
+Now we will try to fit a multiplicative model. First without trend, only fourier terms.
+
+In the original ACF and PACF (right after we took out seasonality), there was a spike at 1 and then slight spikes at 10 and 12. We will fit a multiplicative model that takes the form: 
+(1-a_1B)(1-a_2B^11) which, as an additive model looks like: (1-a_1B-a_2B^11+a_1a_2B^12)
+
+```{r}
+arima.4<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+arima.4mult<- Arima(arima.4$residuals, order=c(12,0,0),seasonal=c(0,0,0), fixed=c(NA,0,0,0,0,0,0,0,0,0,NA,NA,NA),method="ML")
+ summary(arima.4mult)
+```
+
+```{r}
+arima.4mult$residuals %>%
+  ggtsdisplay()
+```
+
+
+```{r}
+White.LB <- rep(NA, 10)
+for(i in 1:50){
+  White.LB[i] <- Box.test(arima.4mult$residuals, lag = i, type = "Ljung", fitdf = 3)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+This is beautiful! This is our 4th model. 
+
+Now we will incorporate trend!
+
+```{r}
+arima.5<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=regressors)
+arima.5mult<- Arima(monthav_train.ts, order=c(12,0,0),seasonal=c(0,0,0), fixed=c(NA,0,0,0,0,0,0,0,0,0, NA,NA,NA),method="ML")
+ summary(arima.5mult)
+```
+
+```{r}
+White.LB <- rep(NA, 10)
+for(i in 4:50){
+  White.LB[i] <- Box.test(arima.5mult$residuals, lag = i, type = "Ljung", fitdf = 3)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+Nice! This will be our 5th candidate model.
+
+We now have 5 candidate models: 
+1. Additive ARIMA(2,0,0)(0,0,0) with 4 fourier terms
+2. Additive ARIMA(9,0,0)(1,0,0) with 4 fourier terms
+3. Additive ARIMA(6,0,0)(2,0,0) with 4 fourier terms and a quadratic trend.
+4. Multiplicative AR(12) with 4 fourier terms
+5. Multiplicative AR(12) with 4 fourier terms and a quadratic trend
+
+
+Now we will make forecasts and see which one performs best on the validation data set. 
+
+```{r}
+plot(forecast(arima.1 ,xreg = fourier(monthav_train.ts, K=4, h=6)), xlab = "Year", ylab = "Concentration(PMs)", main = "Forecasts from Addditive Seasonal ARIMA(2,0,0) Model")
+```
+
+
+```{r}
+plot(forecast(arima.2, xreg = fourier(monthav_train.ts, K=4, h=6)), xlab = "Year", ylab = "Concentration(PMs)", main = "Forecasts from Seasonal ARIMA(9,0,0) Model")
+```
+
+
+```{r}
+t<-(55:60)
+regressors_f<-cbind(fourier(monthav_train.ts, K=4, h=6), t, t^2)
+plot(forecast(arima.3,xreg=regressors_f ))
+```
+
+
+```{r}
+data.frame(forecast(arima.4mult))$Point.Forecast[1:6] + rowSums(fourier(monthav_train.ts, K=4, h=6))
+plot(forecast(arima.4mult))
+```
+
+
+
+```{r}
+plot(forecast(arima.5mult))
+```
+
+
+
+Now we will calculate MAPE and MAE for each model on the validation set and compare. 
+
+```{r}
+test.results1=forecast(arima.1, xreg = fourier(monthav_train.ts, K=4, h=6))
+results = data.frame(test.results1)$Point.Forecast
+monthav_test$`Daily Mean PM2.5 Concentration`
+error=monthav_test$`Daily Mean PM2.5 Concentration`-results
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthav_test$`Daily Mean PM2.5 Concentration`))
+MAE
+MAPE
+```
+
+
+
+```{r}
+test.results2=forecast(arima.2, xreg = fourier(monthav_train.ts, K=4, h=6))
+forecast(arima.2, xreg = fourier(monthav_train.ts, K=4, h=6))
+results = data.frame(test.results2)$Point.Forecast
+results
+monthav_test$`Daily Mean PM2.5 Concentration`
+error=monthav_test$`Daily Mean PM2.5 Concentration`-results
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthav_test$`Daily Mean PM2.5 Concentration`))
+MAE
+MAPE
+```
+
+
+
+```{r}
+test.results3=forecast(arima.3,xreg=regressors_f)
+results = data.frame(test.results3)$Point.Forecast
+monthav_test$`Daily Mean PM2.5 Concentration`
+error=monthav_test$`Daily Mean PM2.5 Concentration`-results
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthav_test$`Daily Mean PM2.5 Concentration`))
+MAE
+MAPE
+```
+
+```{r}
+test.results4=forecast(arima.4mult)
+results = data.frame(test.results4)$Point.Forecast[1:6] + rowSums(fourier(monthav_train.ts, K=4, h=6))
+monthav_test$`Daily Mean PM2.5 Concentration`
+error=monthav_test$`Daily Mean PM2.5 Concentration`-results
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthav_test$`Daily Mean PM2.5 Concentration`))
+MAE
+MAPE
+
+plot.ts(results)
+```
+
+
+```{r}
+test.results5=forecast(arima.5mult)
+results = data.frame(test.results5)$Point.Forecast[1:6] + rowSums(fourier(monthav_train.ts, K=4, h=6))
+monthav_test$`Daily Mean PM2.5 Concentration`
+error=monthav_test$`Daily Mean PM2.5 Concentration`-results
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthav_test$`Daily Mean PM2.5 Concentration`))
+MAE
+MAPE
+```
+
+
+The first candidate model: ARIMA(2,0,0)(0,0,0) with 4 fourier terms performed best with an MAPE of 13.7% and a MAE of 1.127. 
+
+
+```{r}
+monthly = monthav_test.ts
+results = data.frame(test.results1)$Point.Forecast
+autoplot(monthly)+
+  geom_line(aes(y=monthly), col="gray", size=1.5)+
+  geom_line(aes(y=results),col="blue", size=1.5, lty=2)+
+  theme_bw()+
+  xlab("Month of 2018")+
+  ylab("Average of PM2.5 Concentration")+
+  ggtitle("ARIMA(2,0,0) Model Compared to Observed Values")
+```
+
+
+
