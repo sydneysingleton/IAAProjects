@@ -1,0 +1,304 @@
+---
+title: "TimeSeriesHW3"
+output: html_document
+---
+
+```{r}
+library(haven)
+library(forecast)
+library(fma)
+library(tseries)
+library(expsmooth)
+library(lmtest)
+library(zoo)
+library(ggplot2)
+library(dplyr)
+```
+
+
+```{r}
+library(readr)
+raleigh<- read_csv("C:/Users/sydne/Downloads/PM_2_5_Raleigh2.csv")
+```
+
+```{r}
+#check structure of data
+str(raleigh)
+```
+
+```{r}
+#change date to date format
+library(lubridate)
+raleigh$Date<-as.Date(raleigh$Date,"%m/%d/%Y" )
+#create month and year columns
+
+#creating the month and year function like this ensures values dont get jumbled when you aggregate and create a ts object
+raleigh$month<-format(raleigh$Date, format="%m")
+raleigh$year<-format(raleigh$Date, format="%Y")
+
+#split data into test and train
+max(raleigh$Date)
+
+str(raleigh$Date)
+
+
+last6<-which(raleigh$Date > max(raleigh$Date) %m-% months(6))
+#creates index for most recent 6 months (most recent date - 6 months)
+test_raleigh<-raleigh[last6,]
+train_raleigh<-raleigh[-last6,]
+test_raleigh
+#create data set of monthly averages for test and train
+monthav<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year,raleigh, mean)
+
+#aggregate the data to get the monthly averages for the test set
+monthav_train<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year, train_raleigh, mean)
+monthav_train.ts<-ts(monthav_train$`Daily Mean PM2.5 Concentration`, start = 2014, frequency =12)
+
+monthav_test<-aggregate(`Daily Mean PM2.5 Concentration` ~ month + year, test_raleigh, mean)
+
+monthav_test.ts<-ts(monthav_test$`Daily Mean PM2.5 Concentration`, start = c(2018,7), frequency =12)
+```
+
+```{r}
+arima.2<-Arima(monthav_train.ts,order=c(1,0,0), seasonal= c(2,0,0),xreg=fourier(monthav_train.ts,K=5))
+summary(arima.2)
+ 
+ plot.ts(arima.2$residuals)
+
+seas.resids<-ts(arima.2$residuals, frequency = 12)
+
+Acf(seas.resids)
+
+ White.LB <- rep(NA, 10)
+for(i in 1:10){
+  White.LB[i] <- Box.test(seas.resids, lag = i, type = "Ljung", fitdf = 3)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+
+```
+
+
+
+```{r}
+adf.test(seas.resids, alternative = "stationary", k = 0)
+
+ADF.Pvalues <- rep(NA, 3)
+for(i in 0:2){
+  ADF.Pvalues[i+1] <- adf.test(monthav_train.ts, alternative = "stationary", k = i)$p.value
+}
+
+ADF.Pvalues
+```
+
+
+```{r}
+plot(forecast(arima.2, xreg = fourier(monthav_train.ts, K=5, h=6)))
+```
+
+
+```{r}
+arima.3<-Arima(monthav_train.ts,order=c(1,0,1), seasonal= c(2,0,1),xreg=fourier(monthav_train.ts,K=6))
+summary(arima.3)
+ 
+ plot.ts(arima.3$residuals)
+
+seas.resids<-ts(arima.3$residuals, frequency = 12)
+
+Acf(seas.resids)
+
+arima.2<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+seas<- arima.2$residuals %>%
+      Arima(order=c(9,1,0), seasonal= c(1,0,1))
+seas.resids<-seas$residuals
+
+Box.test(seas.resids, lag = 1, type = "Ljung", fitdf = 1)
+
+
+White.LB <- rep(NA, 10)
+for(i in 1:10){
+  White.LB[i] <- Box.test(seas.resids, lag = i, type = "Ljung", fitdf = 10)$p.value
+}
+White.LB
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+
+```
+
+```{r}
+adf.test(seas.resids, alternative = "stationary", k = 0)
+
+ADF.Pvalues <- rep(NA, 3)
+for(i in 0:2){
+  ADF.Pvalues[i+1] <- adf.test(monthav_train.ts, alternative = "stationary", k = i)$p.value
+}
+
+ADF.Pvalues
+```
+
+
+```{r}
+plot(forecast(arima.3, xreg = fourier(monthav_train.ts, K=6, h=6)))
+```
+
+
+
+```{r}
+arima.4<-Arima(monthav_train.ts,order=c(1,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+summary(arima.4)
+ 
+ plot.ts(arima.4$residuals)
+
+seas.resids<-ts(arima.4$residuals, frequency = 12)
+
+Acf(seas.resids)
+
+ White.LB <- rep(NA, 10)
+for(i in 1:10){
+  White.LB[i] <- Box.test(seas.resids, lag = i, type = "Ljung", fitdf = 1)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+
+```
+
+```{r}
+adf.test(seas.resids, alternative = "stationary", k = 0)
+
+ADF.Pvalues <- rep(NA, 3)
+for(i in 0:2){
+  ADF.Pvalues[i+1] <- adf.test(monthav_train.ts, alternative = "stationary", k = i)$p.value
+}
+
+ADF.Pvalues
+```
+
+
+```{r}
+plot(forecast(arima.4, xreg = fourier(monthav_train.ts, K=4, h=6)))
+```
+
+**Use this to visually compare candidate models**
+
+```{r}
+#this compares the random arima models that I have fit
+
+test.results2=forecast(arima.2, xreg = fourier(monthav_train.ts, K=5, h=6))
+test.results3=forecast(arima.3, xreg = fourier(monthav_train.ts, K=6, h=6))
+test.results4=forecast(arima.4, xreg = fourier(monthav_train.ts, K=4, h=6))
+p<-autoplot(monthav_train.ts) +
+  autolayer(monthav_test.ts, series="Actual", PI=FALSE) +
+  autolayer(test.results2, series="ARIMA(1,0,0)(2,0,0), K=5", PI=FALSE)+
+  autolayer(test.results3, series="ARIMA(1,0,1)(2,0,1), K=6", PI=FALSE) +
+  autolayer(test.results4, series="ARIMA(1,0,0)(0,0,0), K=4", PI=FALSE)+
+  theme_bw()
+p
+
+
+```
+
+
+
+
+**Use this to assess candidate models**
+
+```{r}
+#this one is for arima.2, but we can apply it to whatever our candidate models are
+test.results4=forecast(arima.4, xreg = fourier(monthav_train.ts, K=4, h=6))
+test.results4$fitted
+test.results4
+monthav_test$`Daily Mean PM2.5 Concentration`
+error=monthav_test$`Daily Mean PM2.5 Concentration`-test.results$fitted
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthav_test$`Daily Mean PM2.5 Concentration`))
+MAE
+MAPE
+```
+
+```{r}
+
+monthav_train <- monthav_train %>%
+  mutate(jan = ifelse(month == "01", 1, 0),
+         feb = ifelse(month == "02", 1, 0),
+         mar = ifelse(month == "03", 1, 0),
+         apr = ifelse(month == "04", 1, 0), 
+         may = ifelse(month == "05", 1, 0),
+         jun = ifelse(month == "06", 1, 0),
+         jul = ifelse(month == "07", 1, 0),
+         aug = ifelse(month == "08", 1, 0),
+         sep = ifelse(month == "09", 1, 0),
+         oct = ifelse(month == "10", 1, 0),
+         nov = ifelse(month == "11", 1, 0))
+
+dummy_mod<-lm(`Daily Mean PM2.5 Concentration`~ jan + feb + mar + apr + may + jun + jul + aug + sep + oct + nov, data=monthav_train)
+
+coef(dummy_mod)
+```
+
+
+`
+
+
+```{r}
+arima.2<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+summary(arima.2)
+plot.ts(arima.2$residuals)
+Acf(arima.2$residuals)
+arima.2$residuals %>%
+ Arima(order=c(9,0,0), seasonal=c(1,0,0)) %>%
+ residuals() %>% ggtsdisplay()
+
+arima.2<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+
+maybe<-arima.2$residuals %>%
+ Arima(order=c(9,0,0), seasonal=c(1,0,0))
+
+auto.arima(arima.2$residuals)
+
+
+arima.2<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(monthav_train.ts,K=4))
+summary(arima.2)
+plot.ts(arima.2$residuals)
+Acf(arima.2$residuals)
+arima.2$residuals %>%
+ Arima(order=c(1,1,1), seasonal=c(0,0,1)) %>%
+ residuals() %>% ggtsdisplay()
+
+idk<-arima.2$residuals %>%
+ Arima(order=c(1,1,1), seasonal=c(0,0,1))
+
+
+ar91resids<-arima.2$residuals
+
+lm(ar91resids~c(1:54))
+ar91trend.resids<-lm(ar91resids~c(1:54))$residuals
+
+
+ar91trend.resids.ts<-ts(ar91trend.resids, frequency = 12, start = 2014)
+
+
+```
+
+```{r}
+arima.2<-Arima(monthav_train.ts,order=c(0,0,0), seasonal= c(0,0,0), xreg=fourier(monthav_train.ts,K=6))
+test.results4=forecast(arima.2, xreg = fourier(monthav_train.ts, K=6, h=6))
+test.results4$fitted
+test.results4
+monthav_test$`Daily Mean PM2.5 Concentration`
+error=monthav_test$`Daily Mean PM2.5 Concentration`-test.results4$fitted
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(monthav_test$`Daily Mean PM2.5 Concentration`))
+MAE
+MAPE
+```
+
+
