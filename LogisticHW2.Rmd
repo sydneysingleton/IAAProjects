@@ -1,0 +1,203 @@
+---
+title: "LogRegHW2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(haven)
+setwd('C:\\Users\\sydne\\Documents\\Logistic Regression\\Homework2_LR\\')
+data<-read_sas("insurance_t_bin.sas7bdat")
+```
+
+```{r}
+str(data)
+```
+
+
+
+```{r}
+library(VIM)
+x<-aggr(data, plot=F, bars=F)
+summary(x)
+
+#INV, CC, CCPURC, HMOWN have missing vals
+```
+
+
+```{r}
+#recode variables with missing values
+data$INV<-as.factor(as.character(data$INV))
+data$CC<-as.factor(as.character(data$CC))
+data$CCPURC<-as.factor(as.character(data$CCPURC))
+data$HMOWN<-as.factor(as.character(data$HMOWN))
+
+library(dplyr)
+data<-data %>%
+           mutate(INV_1 = ifelse(is.na(INV), "missing", INV),
+                  CC_1 = ifelse(is.na(CC), "missing", CC),
+                  CCPURC_1 = ifelse(is.na(CCPURC), "missing", CCPURC),
+                  HMOWN_1 = ifelse(is.na(HMOWN), "missing", HMOWN)) %>%
+  select(-c(CC,CCPURC, HMOWN, INV))
+
+table(data$INV_1)
+table(data$CC_1)
+table(data$CCPURC_1)
+table(data$HMOWN_1)
+```
+
+
+```{r}
+sum(is.na(data))
+```
+
+
+
+```{r}
+#change all variables to factors
+factchar<-function(x){
+  as.factor(as.character(x))
+}
+data[,c(1:12, 14:47)]<-lapply(data[,c(1:12, 14:47)], factchar)
+```
+
+
+```{r}
+logit.model<-glm(INS~., data=data, family=binomial(link = "logit"))
+
+summary(logit.model)
+```
+
+
+linear separation concerns with `CASHBK` and `MMCRED`
+
+```{r}
+#investigating linear separation concerns
+
+table(data$INS, data$CASHBK)
+table(data$INS, data$MMCRED)
+```
+
+```{r}
+#addressing linear separation concerns
+
+data <- data %>%
+  mutate(CASHBK_1 = ifelse(CASHBK==2, 1, CASHBK),
+         MMCRED_1 = ifelse(MMCRED==5, 3, MMCRED )) %>%
+  select(-c(MMCRED,CASHBK))
+logit.model<-glm(INS~., data=data, family=binomial(link = "logit"))
+
+summary(logit.model)
+```
+
+
+```{r}
+#backward model on main effects
+back.model<-step(logit.model, direction = "backward", k=log(8495))
+summary(back.model)
+```
+
+
+
+```{r}
+
+test<-anova(back.model, test = "Chisq")
+
+test2<-data.frame(test[1])
+pval_df<-data.frame(variable=rownames(test2), pval=test$`Pr(>Chi)` )
+pval_df_sort<-pval_df[order(pval_df$pval),]
+pval_df_sort
+```
+
+
+
+```{r}
+empty
+
+new.model<-glm(INS ~ DDA + NSF + IRA + ILS + MM + MTG + DDABAL_Bin + 
+    CHECKS_Bin + TELLER_Bin + SAVBAL_Bin + ATMAMT_Bin + CDBAL_Bin + 
+    INV_1 + CC_1, family = binomial(link = "logit"), data = data)
+empty=glm(INS~1,family = binomial(link = "logit"), data = data)
+
+#forward model to explore interactions
+
+fwd.model<-step(new.model, scope=list(lower=empty, upper=.~.^2), direction = "forward", k=log(8495))
+summary(fwd.model)
+```
+
+```{r}
+glm(INS ~ DDA + NSF + IRA + ILS + MM + MTG + DDABAL_Bin + 
+    CHECKS_Bin + TELLER_Bin + SAVBAL_Bin + ATMAMT_Bin + CDBAL_Bin + 
+    INV_1 + CC_1 + DDA:IRA, family = binomial(link = "logit"), 
+    data = data, contrasts = list(DDA=contr.sum))
+
+
+#changing it to do effects coding instead
+length(levels(data$DDA))
+
+effectsR<-function(x){
+  contrasts(x)<-contr.sum(length(levels(x)))
+}
+
+effectsR(data$DDA)
+effectsR(data$NSF)
+effectsR(data$IRA)
+effectsR(data$ILS)
+effectsR(data$MM)
+#effectsR(data$MTG)
+effectsR(data$DDABAL_Bin)
+effectsR(data$CHECKS_Bin)
+effectsR(data$TELLER_Bin)
+effectsR(data$SAVBAL_Bin)
+effectsR(data$ATMAMT_Bin)
+effectsR(data$CDBAL_Bin)
+effectsR(data$INV_1)
+effectsR(data$CC_1)
+
+mod<-glm(INS ~ DDA + NSF + IRA + ILS + MM + MTG + DDABAL_Bin + 
+    CHECKS_Bin + TELLER_Bin + SAVBAL_Bin + ATMAMT_Bin + CDBAL_Bin + 
+    INV_1 + CC_1 + DDA:IRA, family = binomial(link = "logit"), 
+    data = data, contrasts = list(DDA=contr.sum))
+summary(mod)
+
+exp(coef(mod))[order(exp(coef(mod)))]
+
+```
+
+```{r}
+table(data$DDA)
+
+
+library(survival)
+concordance(fwd.model)
+
+test<-anova(fwd.model, test = "Chisq")
+
+test2<-data.frame(test[1])
+pval_df<-data.frame(variable=rownames(test2), pval=test$`Pr(>Chi)` )
+pval_df_sort<-pval_df[order(pval_df$pval),]
+pval_df_sort
+```
+
+```{r}
+summary(glm(formula = INS ~ DDA + NSF + SAV + IRA + ILS + 
+    MM + MTG + BRANCH + DDABAL_Bin + CHECKS_Bin + 
+    TELLER_Bin + SAVBAL_Bin + ATMAMT_Bin + CDBAL_Bin + INV_1 + 
+    CC_1 + SAV:DDABAL_Bin + DDA:SAV + DDA:IRA + DIRDEP:MM, family = binomial(link = "logit"), 
+    data = data))
+```
+
+```{r}
+yesa<-.77/.23
+yesb<-0
+
+exp(1.39)/(1+exp(1.39))
+
+logit(.77)
+
+sqrt(8)*sqrt(32)
+```
+
