@@ -1,0 +1,476 @@
+/*Select statements: contain smaller building blocks called clauses 
+  you must specify a from clause!! optional clauses include: where group by having order by 
+  also - you only need one semi colon! 
+  To select all comumns from one table you use a semi colon
+  To only look at certain columns you will do SELECT col1 col2*/
+  
+select id, capital_gain, capital_gain*.1 as Bonus
+from records;
+
+CREATE TABLE temp AS
+SELECT id, capital_gain, capital_gain*.1 as bonus
+FROM records;
+/*not sure if above code is correct*/
+
+/*Elimination of duplicate rows: use select distinct*/
+
+select id, capital_gain, capital_gain*.1 as bonus
+from records
+where bonus > 200;
+
+
+/* Ordering Rows: you can perform an ORDER BY clause on one of the following:
+                    col name, col alias, integer(representing position of item in the SELECT) 
+                    clause), a sql-expression*/
+                    
+ /*Adding labels: column labels and formats must follow the column name and precede the comma. */
+ 
+/*where is evaluated before a row is available for processing for groupby and HAVING is processed after the
+groupby clause and determines which groups are displayed*/
+
+select count(*) as Count
+from Exercise.education_levels;
+
+/*16*/
+
+select country_id , count(*) as count
+from Exercise.records
+group by country_id
+order by count desc;
+
+/*42832*/
+
+
+
+
+select m.movie_name, s.studio_name
+from practice.movies as m, practice.studios as s
+where m.studio_id=s.id;
+
+select m.movie_name, g.genre
+from practice.movies as m, practice.genres as g
+where m.id=g.id;
+
+/*outer joins */
+
+select a.movie_name, b.name
+from practice.movies as a inner join practice.people_movies as c 
+on a.id=c.movie_id inner join practice.people as b on c.person_id = b.id
+order by name; 
+/*Gothika (Widescreen)/Queen Of The Demand*/
+
+select a.movie_name, b.name, count(*) as count
+from practice.movies as a inner join practice.people_movies as c 
+on a.id=c.movie_id inner join practice.people as b on c.person_id = b.id
+group by name 
+order by name; 
+/*39*/
+
+select a.movie_name, b.name, c.movie_id
+from practice.movies as a inner join practice.people_movies as c 
+on a.id=c.movie_id inner join practice.people as b on c.person_id = b.id
+where c.movie_id in ('20372','8727','31670')
+order by b.name; 
+
+/*Ann Worthington*/
+
+
+
+/*noncorrelated subqueries*/
+
+select a.id
+from practice.genres as a
+where a.genre not in ('Comedy','Comedy/Drama','Exercise','Fantasy','Foreign','Animation','
+                        Horror','TV Classics','VAR','War');
+
+select b.movie_name
+from practice.movies as b
+where b.genre_id in (select a.id
+                from practice.genres as a
+                where a.genre not in ('Comedy','Comedy/Drama','Exercise','Fantasy','Foreign','Animation','
+                        Horror','TV Classics','VAR','War'))
+order by movie_name desc;
+
+/*jOBS*/
+
+select m.movie_name
+from practice.movies as m
+where m.movie_name like 'A%' /*starts with capital A*/
+UNION /*eliminates duplicates*/
+select g.genre
+from practice.genres as g
+where g.genre like 'B%'
+
+select m.id
+from practice.movies as m
+EXCEPT
+select p.movie_id
+from practice.people_movies as p
+order by p.movie_id 
+/*2*/
+
+/*6181*/
+
+/*if you are in the practice data base in the drop down box you dont have to do practice.*/
+
+/*How many records in movies?*/
+
+select "Number of records:", count(*) as count
+from movies
+
+/*36878 records*/
+
+
+/*how many dvds cost more than $20?*/
+
+select "Number of records:", count(*) as count
+from movies
+where dvd_price > 20
+
+/*13271 dvds*/
+
+select name id
+from people 
+where name like 'Francisco%'
+
+select a.name, b.movie_name
+from people as a inner join people_movies as c on a.id=c.person_id
+inner join movies as b on b.id=c.movie_id
+
+select a.name, count(*) as count
+from people as a inner join people_movies as c on a.id=c.person_id
+inner join movies as b on b.id=c.movie_id
+group by a.name
+order by count desc
+
+/*what is the average dvd price by rating?*/
+
+select avg(dvd_price) as avg, rating
+from movies
+where rating <> ''
+group by rating
+
+/* if you want to take out missing value from above you can say where rating <> '' */
+
+/*List the ratings that have an average DVD price greater than 20. Do not ignore
+missing values for the ratings.*/
+
+select avg(dvd_price) as avg, rating
+from movies
+group by rating
+having avg > 20
+
+/*grand total of price of all movies in movies table*/
+
+select "Grand total cost:", sum(dvd_price) as total
+from movies
+
+/*We want to reduce the price of each DVD by half. Create a report that lists the
+movie id, its current DVD price, and the new price*/
+
+select id, dvd_price, dvd_price/2 as new_price
+from movies
+
+select id, dvd_price, dvd_price/2 as new_price
+from movies
+where id in (select m.id  
+                from movies as m
+                EXCEPT
+                select p.movie_id
+                from people_movies as p)
+
+select count(*) as count
+from (select m.id  
+from movies as m
+EXCEPT
+select p.movie_id
+from people_movies as p)
+
+/*create table studio_movies3 as*/
+select s.studio_name, count(*) as count
+from studios as s , movies as m 
+where s.id=m.studio_id
+group by studio_name
+
+/*insert data into tables*/
+
+insert into people(name, id)
+values ("Jack Smith", 3003)
+/* 3 ways to create table*/
+
+create table exercise.copied as
+select * from exercise.records where 0;
+
+select* from exercise.copied /* here you get all the columns but 0rows*/
+
+/*deleting data: delete from * where...*/
+/*views: a virtual table based on the results set of an sql statement */
+
+/*advantages of views: you dont have to store copies of tables. users dont have acces to the tables that are used to build that view, they can just see the contents*/
+
+/*you use having for selecting specific groups after grouping!!*/
+
+
+select m.id, m.id/2 as test
+from movies as m
+where test>2000
+
+
+select t.trackid, t.name, g.name
+from genre g, track t
+where t.genreid=g.genreid
+
+select t.name, p.name
+from track t, playlist p, playlisttrack pt
+where pt.playlistid=p.playlistid and pt.trackid=t.trackid 
+and t.name like 'C%'
+
+select * 
+from movies 
+where genre_id in (select id 
+                    from genres
+                    where genre like 'D%')
+
+/*when you want to include two things in one column, use union. the oclumn will be called the name of the first one*/
+
+
+select count(*) as count
+from employee3
+/*8*/
+
+select count(*) as count
+from invoice
+where total > 10
+/*64*/
+
+select c.firstname, c.lastname, c.email
+from customer as c
+where email like "%@gmail.com" 
+
+select art.name, alb.title
+from artist as art, album as alb
+where art.artistid=alb.artistid
+
+select art.name,count(*) as count
+from track as t, album as alb, artist as art
+where t.albumid = alb.albumid and alb.artistid = art.artistid
+group by art.name
+order by count desc
+
+
+select g.name, avg(x.seconds) as avg
+from genre as g, (select t.albumid, t.genreid, sum(t.milliseconds)/1000 as seconds
+                    from track as t
+                    group by t.albumid) as x
+where g.genreid=x.genreid
+group by g.name
+
+   
+
+select avg(t.milliseconds) as avg
+from track as t
+
+select t.name, t.milliseconds
+from track as t
+where t.milliseconds > (select avg(t.milliseconds) as avg
+                        from track as t);
+                        
+select count(*) as count
+from invoice as i, customer as c
+where i.billingaddress = c.address;
+/*412*/
+
+select t.name, t.unitprice*.8 as newprice
+from track as t;
+
+insert into artist(artistid, name)
+values(8675309,"Tommy Tutone");
+
+
+select count(*) as count
+from customer;
+
+select count(*) as count 
+from album
+where album.title like 'A%';
+
+select hiredate
+from employee3;
+
+select i.customerid, il.invoiceid, t.albumid, il.quantity
+from track as t, invoice as i, invoiceline as il
+where t.trackid=il.trackid and i.invoiceid=il.invoiceid;
+
+
+select c.firstname, c.lastname, sum(i.total) as total
+from customer as c inner join invoice as i on c.customerid=i.customerid 
+group by c.customerid;
+
+/*number bought from each state*/
+select c.state, sum(il.quantity) as total
+from customer as c, invoice as i, invoiceline as il
+where c.customerid=i.customerid and i.invoiceid=il.invoiceid
+group by c.state;
+
+/*average number of bytes by media type*/
+select m.name, avg(t.bytes)
+from mediatype as m, track as t
+where t.mediatypeid=m.mediatypeid 
+group by m.name;
+
+select trackid
+from track
+EXCEPT
+select il.trackid
+from invoice as i, invoiceline as il
+where i.invoiceid=il.invoiceid;
+
+
+select trackid
+from track
+except
+select trackid
+from invoiceline;
+
+select rating, avg(dvd_price)
+from movies
+group by rating
+having avg(dvd_price) > 20;
+
+
+select s.studio_name, count(*) as count
+from studios as s, movies as m
+where s.id=m.studio_id
+group by s.id;
+
+/*how many albums owned by customers in the us?*/
+
+/*first find customer ids in us*/
+
+select customerid
+from customer 
+where country = "USA";
+
+/*find invoiceids by this */
+
+select invoiceid
+from invoice 
+where customerid in (select customerid
+                    from customer 
+                    where country = "USA");
+
+/*find total quantity now*/
+
+select sum(quantity)
+from invoiceline
+where invoiceid in (select invoiceid
+                    from invoice 
+                    where customerid in (select customerid
+                                        from customer 
+                                        where country = "USA"));
+        
+
+select t.name as trackName, alb.title, art.name as artist
+from track as t, album as alb, artist as art
+where alb.albumid=t.albumid and art.artistid = alb.artistid;
+
+/*how many tracks not owned by anyone*/
+
+
+select count(*) as count
+from (select trackid
+        from track
+        EXCEPT
+        select trackid
+        from invoiceline);
+
+select c.firstname, c.lastname, count(*) as count
+from customer as c, (select i.customerid, il.invoiceid
+                        from invoice as i, invoiceline as il
+                        where i.invoiceid=il.invoiceid) as x
+where x.customerid = c.customerid
+group by c.customerid;
+
+/***********************************************************************/
+
+select count(*) as count 
+from customer;
+
+select count(*) as count
+from customer;
+
+
+select count(*) as count
+from customer
+where City = "London";
+
+select count(*) as count
+from customer
+where email like '%gmail%';
+
+
+select albumid, title
+from album
+where title like 'K%'
+order by albumid desc;
+
+
+
+select albumid, title, artist
+from (select a.albumid, a.title, b.name as artist
+        from album as a, artist as b
+        where a.artistid=b.artistid)
+where title like 'M%'
+order by albumid desc;
+
+select genreid, avg(unitprice)
+from track
+group by genreid
+order by genreid desc;
+
+select city
+from customer
+UNION 
+select city 
+from employee3;
+
+select count(*)
+from (select city
+from customer
+UNION
+select city 
+from employee3);
+
+select billingcity, avg(total) as avg
+from invoice
+group by billingcity
+having avg > 6;
+
+select avg(total) as avg
+from invoice;
+
+select billingcity, avg(total) as avg
+from invoice
+group by billingcity
+having avg > (select avg(total) as avg
+                from invoice);
+
+select a.name, count(*) as count_albums
+from artist as a, album as b
+where a.artistid = b.artistid
+group by a.artistid
+order by count_albums desc;
+
+create table All_Data as
+select t.name as Track, g.name as Genre, m.name as MediaType
+from track as t inner join genre as g on t.genreid=g.genreid inner join mediatype as m on t.mediatypeid = m.mediatypeid
+order by t.name desc;
+
+insert into artist(name, artistid)
+values("It Depends Music", 277);
+
+select name, artistid
+from artist
+where name ="It Depends Music" and artistid = 277;
+
+
