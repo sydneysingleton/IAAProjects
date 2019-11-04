@@ -1,0 +1,418 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(haven)
+library(forecast)
+library(fma)
+library(tseries)
+library(expsmooth)
+library(lmtest)
+library(zoo)
+library(ggplot2)
+library(caschrono)
+library(TSA)
+library(quantmod)
+library(dplyr)
+library(MASS)
+```
+
+
+
+```{r}
+ts_data<-read.csv("C:\\Users\\sydne\\Downloads\\TS_proj_agg.csv")
+
+ts_trainData<-ts(ts_data[1:54,'PM25'], start = 2014, frequency= 12)
+ts_testData<-ts(ts_data[55:60,'PM25'], start = c(2018,7), frequency = 12)
+```
+
+
+```{r}
+arima.1<-Arima(ts_trainData,order=c(0,0,0), seasonal= c(0,0,0),xreg=fourier(ts_trainData,K=4))
+summary(arima.1)
+plot.ts(arima.1$residuals)
+Acf(arima.1$residuals)
+arima.1$residuals %>%
+  ggtsdisplay()
+```
+
+ESM FORECASTS
+
+```{r}
+fc <- holt(ts_trainData,initial = "optimal", h=6)
+fc2 <- holt(ts_trainData, damped=TRUE, h=6)
+fc3 <- hw(ts_trainData, seasonal = "additive", h=6)
+fc4 <- hw(ts_trainData, seasonal = "multiplicative", h=6)
+
+
+plot(fc, main = "Daily concentrations -Simple ESM", xlab = "Date", ylab = "Average Daily Concentrations")
+abline(v = 2014, col = "red", lty = "dashed")
+
+
+plot(fc2, main = "Daily concentrations-Damped ESM", xlab = "Date", ylab = "Average Daily Concentrations")
+abline(v = 2014, col = "red", lty = "dashed")
+
+plot(fc3, main = "Daily concentrations-Additive Seasonality", xlab = "Date", ylab = "Average Daily Concentrations")
+abline(v = 2014, col = "red", lty = "dashed")
+
+plot(fc4, main = "Daily concentrations-Multiplicative Seasonality", xlab = "Date", ylab = "Average Daily Concentrations")
+abline(v = 2014, col = "red", lty = "dashed")
+```
+
+```{r}
+test.results=forecast(fc,h=6)
+test.results$mean
+test.results
+error=ts_testData-test.results$mean
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+
+test.results=forecast(fc2,h=6)
+test.results$mean
+test.results
+error=ts_testData-test.results$mean
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+
+test.results=forecast(fc3,h=6)
+test.results$mean
+test.results
+error=ts_testData-test.results$mean
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+
+#THE FORECAST BELOW (FC4) ENDED UP BEING CHOSEN
+
+test.results=forecast(fc4,h=6)
+test.results$mean
+test.results
+error=ts_testData-test.results$mean
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+```
+
+ARIMA WITH NO SEASON MODEL
+
+```{r}
+auto.arima(ts_trainData)
+Arima.1<-Arima(ts_trainData, order = c(2,1,0) )
+Acf(Arima.1$residuals)
+White.LB <- rep(NA, 10)
+for(i in 1:50){
+  White.LB[i] <- Box.test(Arima.1$residuals, lag = i, type = "Ljung", fitdf = 2)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+
+FORECAST AND MAPE FOR ARIMA WITH NO SEASON
+
+
+```{r}
+test.results1=forecast(Arima.1, h=6)
+results = ts(data.frame(test.results1)$Point.Forecast, start = c(2018,7), frequency = 12)
+ts_trainData
+error=ts_testData-results
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+```
+
+ARIMA WITH SEASON
+
+```{r}
+Arima.2<-Arima(ts_trainData, order = c(2,0,0), xreg = fourier(ts_trainData, K=4))
+Acf(Arima.2$residuals)
+White.LB <- rep(NA, 10)
+for(i in 1:50){
+  White.LB[i] <- Box.test(Arima.1$residuals, lag = i, type = "Ljung", fitdf = 2)$p.value
+}
+
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+```
+
+FORECAST AND MAPE FOR ARIMA WITH SEASON - THIS WAS THE WINNING MODEL
+
+```{r}
+test.results2=forecast(Arima.2, xreg = fourier(ts_trainData, K=4, h=6))
+results2 = data.frame(test.results2)$Point.Forecast
+ts_testData
+results2=ts(results2, start = c(2018,7), frequency = 12)
+error=ts_testData-results2
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+```
+
+
+BELOW WE MADE ALL OF THE PROVIDED DATA OUR TRAINING SET AND THEN PREDICTED 2019
+
+```{r}
+new_train<-ts(ts_data$PM25, start= 2014, frequency = 12 )
+full_arima <- Arima(new_train, order = c(2,0,0), xreg = fourier(new_train, K=4))
+forecast2019 <- forecast(full_arima, xreg = fourier(new_train, K=4, h=6))
+forecast2019$mean
+```
+
+
+BELOW IS THE ENSEMBLE MODEL THAT AVERAGED UCM, ESM, ARIMA WITH SEASON, AND ARIMA WITHOUT SEASON
+
+
+```{r}
+ensemble<-as.data.frame(cbind(c(9.232852, 9.254682, 8.712030, 9.268077, 8.865813, 9.619317), results, test.results$mean, results2))
+colnames(ensemble)<-c("ARIMAX", "ARIMA (no seas)", "MultSeasESM", "ARIMA (seas)")
+
+ensemble<-ensemble %>%
+  mutate(ensemble = (ARIMAX + `ARIMA (no seas)` + MultSeasESM + `ARIMA (seas)`)/4)
+
+ensMod<-ts(ensemble$ensemble, start=c(2018,7), frequency = 12)
+error=ts_testData-ensMod
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+
+```
+
+BELOW IS TRIAL AND ERROR FOR NEURAL NET
+
+
+```{r}
+
+ADF.Pvalues <- rep(NA, 3)
+for(i in 0:2){
+  ADF.Pvalues[i+1] <- adf.test(ts_trainData, alternative = "stationary", k = i)$p.value
+}
+
+ADF.Pvalues
+
+
+# Autoregressive Neural Network Model #
+NN.Model <- nnetar(diff(ts_trainData,1), p = 2, size = 3)
+NN.Forecast <- forecast(NN.Model, h = 6)
+plot(NN.Forecast)
+
+xreg1<-cbind(fourier(ts_trainData,K=4),seq(1,length(ts_trainData)),(seq(1,length(ts_trainData)))^2)
+colnames(xreg1)<-c('s1','c1','s2','c2','s3','c3','s4','c4','time', 'timesq')
+Model.four<-Arima(ts_trainData,order=c(0,0,0),xreg=xreg1)
+NN.Model2<-nnetar(Model.four$residuals,p=2,P=1,size=2)
+NN.Forecast2<-forecast(NN.Model2,h=6)
+plot(NN.Forecast2)
+
+
+for.seq<-seq(55,60)
+xreg2<-cbind(fourier(ts_trainData,K=4,h=6),for.seq, for.seq^2)
+colnames(xreg2)<-c('s1','c1','s2','c2','s3','c3','s4','c4','time', 'timesq')
+Base.forecast<-forecast(Model.four,xreg=xreg2,h=6)
+net.Forecast2 <- Base.forecast$mean+NN.Forecast2$mean
+
+net.Forecast2 <- ts(net.Forecast2, start = c(2018, 7), frequency = 12)
+
+plot(ts_testData, main = "US Airline Passengers ARIMA Model Forecasts", xlab = "Date", ylab = "Passengers (Thousands)", xlim = c(2018, 2019), ylim = c(0,20))
+lines(net.Forecast2, col = "orange")
+abline(v = 2008.25, col = "red", lty = "dashed")
+```
+
+
+```{r}
+error=ts_testData-net.Forecast2
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+```
+
+STILL TRIAL AND ERROR FOR NEURAL NET
+
+
+```{r}
+set.seed(123)
+MAPE<-rep(NA,40)
+for(i in 1:40){
+  xreg1<-cbind(fourier(ts_trainData,K=4),c(1:54),c(1:54)^2)
+colnames(xreg1)<-c('s1','c1','s2','c2','s3','c3','s4','c4','time', 'timesq')
+Model.four<-Arima(ts_trainData,order=c(0,0,0),xreg=xreg1)
+NN.Model2<-nnetar(Model.four$residuals,p=11,P=1,size=i)
+NN.Forecast2<-forecast(NN.Model2,h=6)
+plot(NN.Forecast2)
+
+xreg2<-cbind(fourier(ts_trainData,K=4,h=6),c(55:60), c(55:60)^2)
+colnames(xreg2)<-c('s1','c1','s2','c2','s3','c3','s4','c4','time', 'timesq')
+Base.forecast<-forecast(Model.four,xreg=xreg2,h=6)
+net.Forecast2 <- Base.forecast$mean+NN.Forecast2$mean
+
+net.Forecast2 <- ts(net.Forecast2, start = c(2018, 7), frequency = 12)
+error=ts_testData-net.Forecast2
+MAE=mean(abs(error))
+MAPE[i]=mean(abs(error)/abs(ts_testData))
+}
+
+plot(MAPE, label = TRUE)
+```
+
+FORECAST AND MAPE FOR NEURAL NET
+
+```{r}
+set.seed(123)
+xreg1<-cbind(fourier(ts_trainData,K=4),c(1:54),c(1:54)^2)
+colnames(xreg1)<-c('s1','c1','s2','c2','s3','c3','s4','c4','time', 'timesq')
+Model.four<-Arima(ts_trainData,order=c(0,0,0),xreg=xreg1)
+NN.Model2<-nnetar(Model.four$residuals,p=11,P=1,size=3)
+NN.Forecast2<-forecast(NN.Model2,h=6)
+plot(NN.Forecast2)
+
+xreg2<-cbind(fourier(ts_trainData,K=4,h=6),c(55:60), c(55:60)^2)
+colnames(xreg2)<-c('s1','c1','s2','c2','s3','c3','s4','c4','time', 'timesq')
+Base.forecast<-forecast(Model.four,xreg=xreg2,h=6)
+net.Forecast2 <- Base.forecast$mean+NN.Forecast2$mean
+
+net.Forecast2 <- ts(net.Forecast2, start = c(2018, 7), frequency = 12)
+error=ts_testData-net.Forecast2
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+
+MAPE
+```
+
+
+BELOW WE ADDED IN THE NEURAL NET TO THE ENSEMBLE MODEL 
+
+
+
+```{r}
+ensemble<-as.data.frame(cbind(c(9.232852, 9.254682, 8.712030, 9.268077, 8.865813, 9.619317), results, results2, net.Forecast2))
+colnames(ensemble)<-c("ARIMAX", "ARIMA (no seas)", "ARIMA (seas)", "NN3")
+
+ensemble<-ensemble %>%
+  mutate(ensemble = (ARIMAX + `ARIMA (no seas)` + `ARIMA (seas)` + net.Forecast2)/4)
+
+ensMod<-ts(ensemble$ensemble, start=c(2018,7), frequency = 12)
+error=ts_testData-ensMod
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+```
+
+THIS NEXT PART WAS JACKSONS CODE FOR ARIMAX I JUST ADDED IN THE FOURIER TERMS
+
+```{r}
+df<-read.csv("C:\\Users\\sydne\\Downloads\\TS_proj_agg.csv")
+Y_t <- ts(df$PM25[1:54],frequency=12)
+X_ts <- as.matrix(df[1:54,4:14])
+Y_ttest <- ts(df$PM25[55:60])
+ 
+########################
+#Plot and look at ACF, PACF
+########################
+plot(Y_t)
+acf(Y_t, lag.max=24)
+pacf(Y_t, lag.max=24)
+
+########################
+#Basic ARIMA
+########################
+model.1 <- auto.arima(Y_t)
+summary(model.1)
+acf(model.1$residuals, lag.max=24)
+pacf(model.1$residuals, lag.max=24)
+Box.test(model.1$residuals, lag = 24, type = c("Ljung-Box"))
+
+########################
+#Find best predictors
+########################
+# Fit the full model 
+full.model <- lm(df$PM25 ~ df$AWND + df$SNOW + df$SNWD + df$TAVG + df$TMIN + df$TMAX
+                 + df$WSF2 + df$WSF5 + df$CO + df$SO + df$NO, data = df)
+# Stepwise regression model
+step.model <- stepAIC(full.model, direction = "both", 
+                      trace = FALSE)
+summary(step.model)
+#looks like CO, SO and TAVG are the best
+
+
+#HERE IS WHERE I ADDED IN SEASON
+X_ts <- as.matrix(cbind(fourier(ts_trainData, K=4), df[1:54,c(7,12,13)]))
+model.2 <- auto.arima(Y_t, xreg=X_ts)
+summary(model.2)
+Acf(model.2$residuals, lag.max=24)
+Pacf(model.2$residuals, lag.max=24)
+Box.test(model.2$residuals, lag = 24, type = c("Ljung-Box"))
+White.LB <- rep(NA, 10)
+for(i in 1:24){
+  White.LB[i] <- Box.test(model.2$residuals, lag = i, type = "Ljung", fitdf = 1)$p.value
+}
+White.LB <- pmin(White.LB, 0.2)
+barplot(White.LB, main = "Ljung-Box Test P-values", ylab = "Probabilities", xlab = "Lags", ylim = c(0, 0.2))
+abline(h = 0.01, lty = "dashed", col = "black")
+abline(h = 0.05, lty = "dashed", col = "black")
+
+```
+FORECAST AND MAPE FOR ARIMAX
+
+```{r}
+X_ts <- as.matrix(cbind(fourier(ts_trainData, K=4, h=6), df[55:60,c(7,12,13)]))
+arimax.fc<-forecast(model.2, xreg = X_ts, h =6 )
+arimax.ts<-ts(arimax.fc$mean, start = c(2018, 7), frequency = 12)
+error=ts_testData-arimax.ts
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+arimax.ts
+```
+
+THE PREDICTIONS JACKSON GAVE ME FROM UCM 
+
+```{r}
+ucm.preds<-ts(c(10.04430144,
+10.10967248,
+6.955645137,
+9.528910279,
+9.868727247,
+11.16931372), start = c(2018,7), frequency = 12)
+```
+
+
+ADDING IN UCM TO ENSEMBLE MODEL BUT STILL NOT AS GOOD
+
+```{r}
+ensemble<-as.data.frame(cbind(arimax.ts, results, results2, net.Forecast2, test.results$mean, ucm.preds))
+colnames(ensemble)<-c("ARIMAX", "ARIMA (no seas)", "ARIMA (seas)", "NN3", "ESM","UCM" )
+
+ensemble<-ensemble %>%
+  mutate(ensemble = (ARIMAX + `ARIMA (no seas)` + `ARIMA (seas)` + net.Forecast2+ESM+UCM)/6)
+
+ensMod<-ts(ensemble$ensemble, start=c(2018,7), frequency = 12)
+error=ts_testData-ensMod
+MAE=mean(abs(error))
+MAPE=mean(abs(error)/abs(ts_testData))
+MAE
+MAPE
+```
+
+
+
+
+
+
+
