@@ -1,0 +1,116 @@
+---
+title: "linearHW1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+leuk <- read_csv("leuk.csv")
+leuk$V5001<-as.factor(leuk$V5001)
+```
+
+
+```{r}
+library(ggplot2)
+randomColumns = sample(1:5000,2)
+plot(leuk[,randomColumns], col = factor(leuk$V5001))
+```
+
+```{r}
+pcaOut = prcomp(leuk[,1:5000],3, scale = F)
+
+plot(pcaOut$x[,1],pcaOut$x[,2],col = leuk$V5001, xlab = "Principal Component 1", ylab = "Principal Component 2", main = 'Genetic Samples Projected into 2-dimensions')
+```
+```{r}
+pcaOut
+```
+```{r}
+biplot(pcaOut, main = 'BiPlot: The observations and variables projected onto the same plane.',cex = c(.5, .3), arrow.len=0)
+```
+
+```{r}
+bestNload<-function(pca,n){
+  pca$rotation[order(sqrt((pca$rotation[,1]^2)+pca$rotation[,2]^2), decreasing = TRUE),][-c(n+1:length(pca$rotation[,1])),]
+}
+
+pcaOut2<-pcaOut
+
+pcaOut2$rotation<-bestNload(pcaOut2,5)
+
+biplot(pcaOut2)
+```
+
+```{r}
+#install.packages("ggfortify")
+
+
+library(ggfortify)
+df <- leuk[,c(1:5000)]
+pca1<-prcomp(df)
+
+
+autoplot(pca1, data = leuk,labels=TRUE,shape=FALSE,  colour = 'V5001')+
+  theme_light()
+
+
+```
+
+```{r}
+library(stats)
+autoplot(kmeans(leuk[c(1:5000)], 3), data = leuk, frame = TRUE, label=TRUE)
+```
+
+```{r}
+library(cluster)
+autoplot(clara(leuk[c(1:5000)], 3), frame=TRUE, label=TRUE)
+```
+
+
+
+  
+
+
+```{r}
+library(cluster)
+autoplot(pam(leuk[c(1:5000)], 3), frame=TRUE, label=TRUE)
+
+```
+
+```{r}
+library(cluster)
+autoplot(fanny(leuk[c(1:5000)], 3), label=TRUE, shape =FALSE)
+```
+
+Dear Olive, 
+
+We are so sorry that your team had such a mix-up! How stressful that must have been! However, we do believe we have identified the most probable mislabeled samples. Those are:
+
+1. Sample 19: Currently labeled as AML, but could be ALL-T
+or 
+2. Sample 2: Currently labeled as AML, but could be ALL-B
+
+To reason that these two samples are likely mislabeled, we looked at figure 1 in the attached document. You can see that both sample 19 and sample 2 look misplaced. To confirm this hypothesis, we did some magical analytics that guesses how the samples should be grouped based on the data you gave us. This led us to conclude that sample 19 has the highest probability of being mislabeled.
+
+In the 4 groupings that we explored, sample 19 was consistently grouped with samples 5, 6 15, 24, and 38 - which are all labeled ALL-T. 
+
+Also, 75% of the time sample 2 was grouped with samples 1, 3,7, 33, and 37,  which are all labeled as ALL -B. 
+
+We suggest that you explore sample 19 initially, as it has the highest chance of being mislabeled. If that happens to be wrong, sample 2 is likely the culprit. 
+
+We hoped this helped! Please let us know if out analysis was successful. 
+
+Best, 
+The Orange 8 Analytics Team: 
+  Emily Ammons
+  Yuting (Crystal) Cheng
+  Samir Patel
+  Bob Bayer
+  Sydney Greer 
+
+
+
+
